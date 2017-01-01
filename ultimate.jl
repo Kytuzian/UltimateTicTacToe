@@ -1,40 +1,34 @@
 using ProgressMeter
 
-println("Loading Images.")
-
-using Images
-println("Loaded Images.")
-
 type Square
-    rows::Array{Array{Int64, 1}, 1}
+    rows
 end
 
-type Move
-    previous::(Int64, Int64)
-    move::(Int64, Int64)
+immutable Move
+    previous :: Tuple{Int64,Int64}
+    move :: Tuple{Int64,Int64}
 end
 
 #clear board rows after it has it's children generated. Save the last move of the board
-
 type Board
-    rows::Array{Array{Square, 1}, 1}
+    rows
     owner_square::Square
 
     owner::Int64
 
     previous_move::Move
 
-    function Board(rows::Array{Array{Square, 1}, 1}, previous_move::Move)
+    function Board(rows, previous_move::Move)
         osquare = owner_square(rows)
 
         return new(rows, osquare, owner(osquare, true), previous_move)
     end
 
-    Board(rows::Array{Array{Square, 1}, 1}, owner_square::Square, owner::Int64, previous_move::Move) = new(rows, owner_square, owner, previous_move)
+    Board(rows, owner_square::Square, owner::Int64, previous_move::Move) = new(rows, owner_square, owner, previous_move)
 end
 
 type Goal
-    goal_type::ASCIIString
+    goal_type::String
     marker::Int64
 
     goal
@@ -43,7 +37,7 @@ type Goal
 
     tester
 
-    function Goal(goal_type::ASCIIString, marker::Int64, goal, truth_value::Bool)
+    function Goal(goal_type::String, marker::Int64, goal, truth_value::Bool)
         tester = goal_own
         if goal_type == "own"
             tester = goal_own
@@ -60,17 +54,17 @@ type Goal
         return new(goal_type, marker, goal, truth_value, tester)
     end
 
-    Goal(goal_type::ASCIIString, goal) = Goal(goal_type, "", goal, true)
-    Goal(goal_type::ASCIIString, goal, truth_value::Bool) = Goal(goal_type, "", goal, true)
+    Goal(goal_type::String, goal) = Goal(goal_type, "", goal, true)
+    Goal(goal_type::String, goal, truth_value::Bool) = Goal(goal_type, "", goal, true)
 end
 
 type Outcome
     board::Board
-    move_sequence::Array{Move, 1}
+    move_sequence
 
     parent
-    children::Array{Outcome, 1}
-    siblings::Array{Outcome, 1}
+    children
+    siblings
 
     total_score::Int64 #The sum of all goal scores of all children
     total_outcomes::Int64 #The total number of children
@@ -79,18 +73,18 @@ type Outcome
 
     is_finished::Bool
 
-    function Outcome(board::Board, move_sequence::Array{Move, 1}, parent, children::Array{Outcome, 1},
-                     siblings::Array{Outcome, 1}, total_score::Int64, total_outcomes::Int64, goal_score::Int64,
+    function Outcome(board::Board, move_sequence, parent, children,
+                     siblings, total_score::Int64, total_outcomes::Int64, goal_score::Int64,
                      is_finished::Bool)
         return new(board, move_sequence, parent, children, siblings, total_score, total_outcomes, goal_score, is_finished)
     end
 
-    function Outcome(board::Board, move_sequence::Array{Move, 1}, parent, total_score::Int64,
+    function Outcome(board::Board, move_sequence, parent, total_score::Int64,
                      total_outcomes::Int64, goal_score::Int64, is_finished::Bool)
         return new(board, move_sequence, parent, Outcome[], Outcome[], total_score, total_outcomes, goal_score, is_finished)
     end
 
-    function Outcome(board::Board, goals::Array{Goal, 1})
+    function Outcome(board::Board, goals)
         parent = nothing
         move_sequence = Move[]
         goal_score = get_goal_score(board, goals)
@@ -102,9 +96,9 @@ end
 
 type UTTFile
     board::Board
-    markers::Array{Int64, 1}
+    markers
 
-    goals::Array{Goal, 1}
+    goals
 
     max_steps::Int64
     steps::Int64
@@ -113,10 +107,7 @@ type UTTFile
     score_threshold::Float64
 end
 
-#Completely flattens an array
-flatten{T}(a::Array{T,1}) = any(map(x -> isa(x, Array), a)) ? flatten(vcat(map(flatten, a)...)) : a
-flatten{T}(a::Array{T}) = reshape(a, prod(size(a)))
-flatten(a) =  a
+flatten(arr) = reduce(vcat, arr)
 
 function remove!(a, v)
     for (i, test_v) in enumerate(a)
@@ -158,30 +149,13 @@ end
 
 average_points(points) = average_pairs(map(i -> (i.x, i.y), points))
 
-function ==(a::Move, b::Move)
-    (pxa, pya), (mxa, mya) = a.previous, a.move
-    (pxb, pyb), (mxb, myb) = b.previous, b.move
-
-    if pxa != pxb
-        return false
-    elseif pya != pyb
-        return false
-    elseif mxa != mxb
-        return false
-    elseif mya != myb
-        return false
-    else
-        return true
-    end
-end
-
-function construct_best_move_tree(os::Array{Outcome, 1}, key=outcome_score, moves=1)
+function construct_best_move_tree(os, key=outcome_score, moves=1)
     outcomes = filter(outcome -> length(outcome.move_sequence) == moves, os)
 
     sort!(outcomes, by=key)
     best_move = outcomes[end].move_sequence[end]
 
-    candidates = (Move => Any)[]
+    candidates = (Pair{Move, Any})[]
     for outcome in os
         if length(outcome.move_sequence) == (moves + 1) && outcome.move_sequence[moves] == best_move
             next_outcomes = filter(o -> length(o.move_sequence) > (moves + 1) && o.move_sequence[moves + 1] == outcome.move_sequence[end], os)
@@ -194,13 +168,13 @@ function construct_best_move_tree(os::Array{Outcome, 1}, key=outcome_score, move
         end
     end
 
-    return {best_move => candidates}
+    return [best_move => candidates]
 end
 
-test_data() = {[1,2,3,5,4], [1,2,3,4,5], [1,2,4,5,3], [1,3,4,5,3], [1,3,3,5,3], [1,3,5,2,1], [1,4,6,1,1]}
+test_data() = [[1,2,3,5,4], [1,2,3,4,5], [1,2,4,5,3], [1,3,4,5,3], [1,3,3,5,3], [1,3,5,2,1], [1,4,6,1,1]]
 function build_tree(a, i=1, verbose=0)
-    result = (Any => Any)[]
-    processed = (Int64 => Bool)[]
+    result = (Pair{Any, Any})[]
+    processed = (Pair{Int64, Bool})[]
 
     for (data_i, data) in enumerate(a)
         if length(data) > i
@@ -299,7 +273,7 @@ function diagonals(ss)
     first_diag = [ss[i][i] for i=1:length(ss)]
     second_diag = [ss[i + 1][length(ss) - i] for i=0:(length(ss) - 1)]
 
-    return {first_diag, second_diag}
+    return [first_diag, second_diag]
 end
 
 columns(a) = [[a[y][x] for y = 1:length(a)] for x=1:length(a)]
@@ -353,7 +327,7 @@ function owner(s::Square, check_has_more=false)
     # end
 end
 
-owner_square(rows::Array{Array{Square, 1}, 1}) = Square(map(row -> map(owner, row), rows))
+owner_square(rows) = Square(map(row -> map(owner, row), rows))
 owner_square(b::Board) = Square(map(row -> map(owner, row), b.rows))
 
 owner(b::Board) = b.owner
@@ -365,7 +339,7 @@ no_owner(b::Board) = b.owner == 0
 
 #Returns a list of all tuples that contain squares without a marker.
 function all_moves(s::Square)
-    result = (Int64, Int64)[]
+    result = (Tuple{Int64, Int64})[]
 
     for (ix, x) in enumerate(s.rows)
         for (iy, y) in enumerate(x)
@@ -395,7 +369,7 @@ end
 
 function all_moves(b::Board)
     x, y = b.previous_move.move
-
+    
     if x == 0 && y == 0 #If they're 0s, then its the first move, so we can go anywhere
         return all_open_moves(b)
     end
@@ -416,7 +390,7 @@ end
 
 all_moves(outcome::Outcome) = all_moves(outcome.board)
 
-function do_move(s::Square, marker::Int64, move::(Int64, Int64))
+function do_move(s::Square, marker::Int64, move)
     rows = deepcopy(s.rows)
 
     rows[move[1]][move[2]] = marker
@@ -424,7 +398,7 @@ function do_move(s::Square, marker::Int64, move::(Int64, Int64))
     return Square(rows)
 end
 
-function do_move(b::Board, marker::Int64, move::Move, goals::Array{Goal, 1})
+function do_move(b::Board, marker::Int64, move::Move, goals)
     rows = deepcopy(b.rows)
 
     prev_x, prev_y = move.previous
@@ -440,7 +414,7 @@ function do_move(b::Board, marker::Int64, move::Move, goals::Array{Goal, 1})
     return Outcome(board, move_sequence, parent, goal_score, 0, goal_score, is_finished)
 end
 
-function do_move(outcome::Outcome, marker::Int64, move::Move, goals::Array{Goal, 1})
+function do_move(outcome::Outcome, marker::Int64, move::Move, goals)
     rows = deepcopy(outcome.board.rows)
 
     prev_x, prev_y = move.previous
@@ -458,13 +432,13 @@ end
 
 do_all_moves(s::Square, marker::Int64) = map(move -> do_move(a, marker, move), all_moves(a))
 
-function do_all_moves(b::Board, goals::Array{Goal, 1}, marker)
+function do_all_moves(b::Board, goals, marker)
     o = Outcome(b, goals)
 
     return do_all_moves(o, goals, marker)
 end
 
-function do_all_moves(o::Outcome, goals::Array{Goal, 1}, marker=-1)
+function do_all_moves(o::Outcome, goals, marker=-1)
     if length(o.children) > 0 #If we've already generated the children, we don't need to do it again.
         return o.children
     else
@@ -494,7 +468,7 @@ end
 
 get_solved(a) = filter(has_owner, a)
 
-function goal_own(b::Board, marker::Int64, goal::(Int64, Int64), truth_value::Bool)
+function goal_own(b::Board, marker::Int64, goal, truth_value::Bool)
     if (b.owner_square.rows[goal[1]][goal[2]] == marker) == truth_value
         return 1
     else
@@ -502,7 +476,7 @@ function goal_own(b::Board, marker::Int64, goal::(Int64, Int64), truth_value::Bo
     end
 end
 
-function goal_move(b::Board, marker::Int64, goal::(Int64, Int64), truth_value::Bool)
+function goal_move(b::Board, marker::Int64, goal, truth_value::Bool)
     if (b.previous_move == goal) == truth_value
         return 1
     else
@@ -526,7 +500,7 @@ end
 
 meets_goal(b::Board, goal::Goal) = goal.tester(b, goal.marker, goal.goal, goal.truth_value) > 0
 
-function meets_goals(b::Board, goals::Array{Goal, 1})
+function meets_goals(b::Board, goals)
     for goal in goals
         if !meets_goal(b, goal)
             return false
@@ -536,7 +510,7 @@ function meets_goals(b::Board, goals::Array{Goal, 1})
     return true
 end
 
-function get_goal_score(b::Board, goals::Array{Goal, 1})
+function get_goal_score(b::Board, goals)
     score = 0
 
     for goal in goals
@@ -566,8 +540,8 @@ function owned_squares(b::Board, marker::Int64)
     return count
 end
 
-function get_outcomes(b_list::Array{Outcome, 1}, self, markers,
-                      goals::Array{Goal, 1}, max_steps=-1, verbose=0, progress_bar=nothing)
+function get_outcomes(b_list, self, markers,
+                      goals, max_steps=-1, verbose=0, progress_bar=nothing)
     if progress_bar != nothing
         if progress_bar.n - progress_bar.counter == max_steps
             next!(progress_bar)
@@ -656,7 +630,7 @@ function outcome_is_finished(o::Outcome)
     end
 end
 
-function lookahead_outcomes(base::Outcome, self, markers, goals::Array{Goal, 1}, max_steps, verbose)
+function lookahead_outcomes(base::Outcome, self, markers, goals, max_steps, verbose)
     result = Outcome[]
 
     # println("$(base.move_sequence): $(length(all_moves(base))) moves.")
@@ -728,7 +702,7 @@ function current_markers(o::Outcome)
 end
 
 function get_available_outcomes(o::Outcome, closed::Set{Outcome}, self, markers,
-                                goals::Array{Goal, 1}, max_steps, verbose)
+                                goals, max_steps, verbose)
     highest_parent = get_highest_parent(o, self, markers) #Get the top level node
 
     #The initial candidates are the highest_parent's children.
@@ -759,7 +733,7 @@ function get_available_outcomes(o::Outcome, closed::Set{Outcome}, self, markers,
     return results
 end
 
-function display_move_sequence(moves::Array{Move, 1})
+function display_move_sequence(moves)
     if length(moves) >= 2
         return "$(moves[1])...$(moves[end])"
     else
@@ -778,7 +752,7 @@ function get_outcome_sequence(o::Outcome)
     return reverse(outcome_sequence)
 end
 
-function visualize_outcome_sequence(outcomes::Array{Outcome, 1})
+function visualize_outcome_sequence(outcomes)
     for outcome in outcomes
         if length(outcome.move_sequence) > 0
             println(outcome.move_sequence[end])
@@ -790,7 +764,7 @@ function visualize_outcome_sequence(outcomes::Array{Outcome, 1})
     return true
 end
 
-function remove_outcomes!(list::Array{Outcome, 1}, o::Outcome, remove_siblings)
+function remove_outcomes!(list, o::Outcome, remove_siblings)
     remove!(list, o)
 
     for child in o.children
@@ -812,7 +786,7 @@ function show_all_children(o::Outcome, indent=0)
     end
 end
 
-function path_outcomes(o::Outcome, self, markers, goals::Array{Goal, 1}, score_threshold, max_steps=4, path_steps=2, verbose=0)
+function path_outcomes(o::Outcome, self, markers, goals, score_threshold, max_steps=4, path_steps=2, verbose=0)
     current = o
 
     closed = Set{Outcome}()
@@ -821,7 +795,6 @@ function path_outcomes(o::Outcome, self, markers, goals::Array{Goal, 1}, score_t
 
     self_open = get_available_outcomes(current, closed, self, markers, goals, path_steps, verbose)
     opponent_open = Outcome[]
-
     first_move = nothing
 
     previous_available = Outcome[]
@@ -841,7 +814,7 @@ function path_outcomes(o::Outcome, self, markers, goals::Array{Goal, 1}, score_t
             end
 
             if verbose > 0
-                println("$(move.move_sequence): $(move.total_outcomes): $oscore < $score_threshold")
+                # println("$(move.move_sequence): $(move.total_outcomes): $oscore < $score_threshold")
             end
         end
 
@@ -1051,7 +1024,8 @@ function path_outcomes(o::Outcome, self, markers, goals::Array{Goal, 1}, score_t
         if self == markers[1]
             if length(current.move_sequence) >= max_steps
                 # if verbose > 0
-                    println("Hit max steps.")
+                println("")
+                println("Hit max steps.")
                 # end
 
                 break
@@ -1076,12 +1050,12 @@ function path_outcomes(o::Outcome, self, markers, goals::Array{Goal, 1}, score_t
 end
 
 function input_board(previous_move)
-    rows = map(i -> convert(ASCIIString, i), [replace(readline(), "\n", "") for i in 1:11])
+    rows = map(i -> convert(String, i), [replace(readline(), "\n", "") for i in 1:11])
 
     return parse_board(rows, previous_move)
 end
 
-function parse_board(lines::Array{ASCIIString, 1}, previous_move::(Int64, Int64))
+function parse_board(lines, previous_move)
     b = blank_board()
 
     lines = filter(line -> !contains(line, "-"), lines) #Remove the blank vertical separator lines.
@@ -1093,7 +1067,7 @@ function parse_board(lines::Array{ASCIIString, 1}, previous_move::(Int64, Int64)
         for y in 1:3
             for sx in 1:3
                 for sy in 1:3
-                    b = do_move(b, int(string(lines[(x - 1) * 3 + sx][(y - 1) * 3 + sy])), Move((x, y), (sx, sy)), Goal[])
+                    b = do_move(b, parse(Int64, string(lines[(x - 1) * 3 + sx][(y - 1) * 3 + sy])), Move((x, y), (sx, sy)), Goal[])
                 end
             end
         end
@@ -1102,9 +1076,9 @@ function parse_board(lines::Array{ASCIIString, 1}, previous_move::(Int64, Int64)
     return Board(b.board.rows, Move((0, 0), previous_move))
 end
 
-remove_newlines(s::ASCIIString) = replace(replace(s, "\r", ""), "\n", "")
+remove_newlines(s::String) = replace(replace(s, "\r", ""), "\n", "")
 
-function read_file_lines(fname::ASCIIString)
+function read_file_lines(fname::String)
     f = open(fname)
     lines = map(remove_newlines, readlines(f))
     close(f)
@@ -1113,7 +1087,7 @@ function read_file_lines(fname::ASCIIString)
 end
 
 function parse_pair(pair_str, pair_type)
-    vals = map(pair_type, split(pair_str, ","))
+    vals = map(i -> parse(pair_type, i), split(pair_str, ","))
 
     return (vals[1], vals[2])
 end
@@ -1136,9 +1110,9 @@ function parse_goal(params)
             end
 
             if goal_type == "win"
-                marker = int(params[2])
+                marker =parse(Int64, params[2])
             elseif goal_type == "own_count"
-                marker = int(params[2])
+                marker =parse(Int64, params[2])
             end
         elseif length(params) < 5
             if params[end] == "true"
@@ -1148,25 +1122,25 @@ function parse_goal(params)
             end
 
             if goal_type == "own"
-                marker = int(params[2])
+                marker =parse(Int64, params[2])
                 goal = parse_pair(params[3], int)
             elseif goal_type == "move"
-                marker = int(params[2])
+                marker =parse(Int64, params[2])
                 goal = parse_pair(params[3], int)
             elseif goal_type == "own_count"
-                marker = int(params[2])
+                marker =parse(Int64, params[2])
             elseif goal_type == "win"
-                marker = int(params[2])
+                marker =parse(Int64, params[2])
             end
         else
             throw("Too many argument for goal: $(length(params))")
         end
     end
 
-    return Goal(convert(ASCIIString, goal_type), marker, goal, truth_value)
+    return Goal(convert(String, goal_type), marker, goal, truth_value)
 end
 
-function read_utt_file(fname::ASCIIString)
+function read_utt_file(fname::String)
     lines = read_file_lines(fname)
 
     board = blank_board()
@@ -1198,15 +1172,15 @@ function read_utt_file(fname::ASCIIString)
         if length(params) == 0 #Ignore blank links
             continue
         elseif params[1] == "markers"
-            markers = map(i -> int(i), split(params[2], ","))
+            markers = map(i ->parse(Int64, i), split(params[2], ","))
         elseif params[1] == "max_steps"
-            max_steps = int(params[2])
+            max_steps =parse(Int64, params[2])
         elseif params[1] == "path_steps"
-            path_steps = int(params[2])
+            path_steps =parse(Int64, params[2])
         elseif params[1] == "score_threshold"
             score_threshold = float(params[2])
         elseif params[1] == "board"
-            previous_move = parse_pair(params[2], int)
+            previous_move = parse_pair(params[2], Int64)
             board = parse_board(lines[i + 1:i + 12], previous_move) #9 lines for the actual board, 2 for the separators.
             ignore_lines = 9
         elseif params[1] == "goal"
@@ -1300,7 +1274,7 @@ function output_board(b::Board)
     return result
 end
 
-function play_self(template::ASCIIString)
+function play_self(template::String)
     utt_file = read_utt_file(template)
 
     markers = [1,2]
@@ -1339,18 +1313,18 @@ function reverse_board(b::Board)
     board_output = replace(board_output, "2", "1")
     board_output = replace(board_output, "t", "2")
     lines = split(board_output, "\n")
-    lines = map(i -> convert(ASCIIString, i), lines)
+    lines = map(i -> convert(String, i), lines)
 
     new_board = parse_board(lines, b.previous_move.move)
 
     return new_board
 end
 
-function read_utt_file_from_screen(filename::ASCIIString, template::ASCIIString, verbose)
+function read_utt_file_from_screen(filename::String, template::String, verbose)
     return read_utt_file_from_image(take_screenshot_mac(filename), template, verbose)
 end
 
-function read_utt_file_from_image(filename::ASCIIString, template::ASCIIString, verbose)
+function read_utt_file_from_image(filename::String, template::String, verbose)
     base_utt_file = read_utt_file(template)
 
     groups = group_regions_by_colors(get_regions(filename, (450, 907, 203, 662), TestRange(500, 1500), verbose), 0.4)
@@ -1499,7 +1473,7 @@ function output_goal(goal::Goal)
     end
 end
 
-function write_outcome(filename::ASCIIString, o::Outcome)
+function write_outcome(filename::String, o::Outcome)
     writer = open(filename, "w")
 
     write(writer, output_board(o.board))
@@ -1507,7 +1481,7 @@ function write_outcome(filename::ASCIIString, o::Outcome)
     close(writer)
 end
 
-function output_utt_file(utt_file::UTTFile, filename::ASCIIString)
+function output_utt_file(utt_file::UTTFile, filename::String)
     writer = open(filename, "w")
 
     write(writer, "markers: $(utt_file.markers[1]),$(utt_file.markers[2])\n")
@@ -1530,7 +1504,7 @@ function handle_params(params, is_running=false)
         verbose = 3
 
         if !is_running
-            file_name = convert(ASCIIString, params[1])
+            file_name = convert(String, params[1])
 
             if '/' in file_name
                 separator = '/'
@@ -1540,22 +1514,20 @@ function handle_params(params, is_running=false)
 
             path_params = split(file_name, separator)
             path = join(path_params[1:end - 1], separator) * string(separator)
-            fname = convert(ASCIIString, path_params[end])
+            fname = convert(String, path_params[end])
         else
             path = "./"
-            fname = convert(ASCIIString, params[1])
+            fname = convert(String, params[1])
         end
 
         try
             if length(path) > 1
                 println("Switching path to $path.")
                 cd(path)
-
-                include("ImageRegion.jl")
             end
         catch
         end
-
+        
         if fname == "run" #Continuously run
             println("Running interactively.")
 
@@ -1568,7 +1540,7 @@ function handle_params(params, is_running=false)
             println("Reading screen into file and running file.")
             println("Switching path to $path.")
 
-            template_file = path * convert(ASCIIString, params[2])
+            template_file = path * convert(String, params[2])
 
             println("Running the current game on screen with the template file $template_file")
 
@@ -1582,7 +1554,7 @@ function handle_params(params, is_running=false)
 
             println("Reading the screen into a file.")
 
-            template_file = path * convert(ASCIIString, params[2])
+            template_file = path * convert(String, params[2])
 
             println("Reading the screen into file: $template_file")
 
@@ -1596,8 +1568,8 @@ function handle_params(params, is_running=false)
 
             println("Processing image.")
 
-            image_file = path * convert(ASCIIString, params[2])
-            template_file = path * convert(ASCIIString, params[3])
+            image_file = path * convert(String, params[2])
+            template_file = path * convert(String, params[3])
 
             println("Processing the image file $image_file with the template $template_file.")
 
@@ -1611,8 +1583,8 @@ function handle_params(params, is_running=false)
 
             println("Running image.")
 
-            image_file = path * convert(ASCIIString, params[2])
-            template_file = path * convert(ASCIIString, params[3])
+            image_file = path * convert(String, params[2])
+            template_file = path * convert(String, params[3])
 
             println("Processing the image file $image_file with the template $template_file.")
 
@@ -1649,11 +1621,13 @@ function handle_params(params, is_running=false)
             end
         end
     end
+
+    return false
 end
 
 res = handle_params(ARGS, false)
 
-if res == true
+if res
     while true
         print(":> ") #Show prompt
         params = split(readline()[1:end - 1])
